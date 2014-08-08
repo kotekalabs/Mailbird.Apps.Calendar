@@ -44,17 +44,21 @@ namespace Mailbird.Apps.Calendar.Engine
 
         public bool InsertAppointment(Appointment appointment)
         {
-            return _calendarProviders[appointment.Calendar.Provider].InsertAppointment(appointment);
+            var provider = appointment.Calendar != null ? appointment.Calendar.Provider : GetProviders.FirstOrDefault().Name.ToString();
+            return _calendarProviders[provider].InsertAppointment(appointment);
         }
 
         public bool UpdateAppointment(Appointment appointment)
         {
-            return _calendarProviders[appointment.Calendar.Provider].UpdateAppointment(appointment);
+            
+            var provider = appointment.Calendar != null ? appointment.Calendar.Provider : GetProviders.FirstOrDefault().Name.ToString();
+            return _calendarProviders[provider].UpdateAppointment(appointment);
         }
 
         public bool RemoveAppointment(Appointment appointment)
         {
-            return _calendarProviders[appointment.Calendar.Provider].RemoveAppointment(appointment);
+            var provider = appointment.Calendar != null ? appointment.Calendar.Provider : GetProviders.FirstOrDefault().Name.ToString();
+            return _calendarProviders[provider].RemoveAppointment(appointment);
         }
     }
 }

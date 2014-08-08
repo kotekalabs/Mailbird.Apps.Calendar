@@ -44,6 +44,7 @@ namespace Mailbird.Apps.Calendar
                 {
                     Id = obj.Id,
                     AllDayEvent = obj.AllDay,
+                    Calendar = (Engine.Metadata.Calendar)obj.CustomFields[0],
                     Description = obj.Description,
                     EndTime = obj.End,
                     LabelId = obj.LabelId,

@@ -9,6 +9,7 @@ using System.Collections.Generic;
 ﻿using Mailbird.Apps.Calendar.Engine.Interfaces;
 ﻿using Mailbird.Apps.Calendar.Engine.Metadata;
 ﻿using Mailbird.Apps.Calendar.Infrastructure;
+using System.Threading.Tasks;
 
 namespace Mailbird.Apps.Calendar.ViewModels
 {
@@ -22,6 +23,8 @@ namespace Mailbird.Apps.Calendar.ViewModels
 
         private readonly ObservableCollection<TreeData> _treeData = new ObservableCollection<TreeData>();
 
+        private readonly Engine.Metadata.Calendar[] _calendarCollection;
+
         #endregion PrivateProps
 
         #region PublicProps
@@ -33,7 +36,7 @@ namespace Mailbird.Apps.Calendar.ViewModels
         public ObservableCollection<TreeData> TreeData
         {
             get { return _treeData; }
-        }        
+        }
 
         #endregion PublicProps
 
@@ -57,10 +60,11 @@ namespace Mailbird.Apps.Calendar.ViewModels
                 if (!_appointments.ContainsKey(a.Id))
                     _appointments.Add(a.Id, a);
             }
+            //make asynchronous for minimalize UI lag.
+            var calendars = Task.Factory.StartNew(() => _calendarsCatalog.GetCalendars());
 
-            var calendars = _calendarsCatalog.GetCalendars();
-
-            calendars.ToArray();
+            //if (calendars.IsCompleted)
+                _calendarCollection = calendars.Result.ToArray();
 
             FlyoutViewModel = new FlyoutViewModel
             {
@@ -76,7 +80,7 @@ namespace Mailbird.Apps.Calendar.ViewModels
             if (appointment.Id == null || _appointments.ContainsKey(appointment.Id))
                 appointment.Id = Guid.NewGuid();
             if (appointment.Calendar == null)
-                appointment.Calendar = _calendarsCatalog.DefaultCalendar;
+                appointment.Calendar = _calendarsCatalog.DefaultCalendar != null ? _calendarsCatalog.DefaultCalendar : _calendarCollection.FirstOrDefault(x => x.AccessRights == Engine.Metadata.Calendar.Access.Write);
             _appointments.Add(appointment.Id, appointment);
             _calendarsCatalog.InsertAppointment(appointment);
         }
@@ -87,11 +91,17 @@ namespace Mailbird.Apps.Calendar.ViewModels
             AppointmentCollection.Remove(appointmentToUpdate);
             AppointmentCollection.Add(appointment);
             _appointments[appointmentId] = appointment;
+            if (appointment.Calendar == null)
+                appointment.Calendar = _calendarsCatalog.DefaultCalendar != null ? _calendarsCatalog.DefaultCalendar : _calendarCollection.FirstOrDefault(x => x.AccessRights == Engine.Metadata.Calendar.Access.Write);
             _calendarsCatalog.UpdateAppointment(appointment);
         }
 
         public void RemoveAppointment(object appintmentId)
         {
+            //prevent Calendar to be null  -> Will Force Close when Drag & Move Events
+            var appointment = _appointments[appintmentId]; // make like this for more debuggable code
+            if (appointment.Calendar == null)
+                appointment.Calendar = _calendarsCatalog.DefaultCalendar != null ? _calendarsCatalog.DefaultCalendar : _calendarCollection.FirstOrDefault(x => x.AccessRights == Engine.Metadata.Calendar.Access.Write);
             AppointmentCollection.Remove(_appointments[appintmentId]);
             _calendarsCatalog.RemoveAppointment(_appointments[appintmentId]);
             _appointments.Remove(appintmentId);

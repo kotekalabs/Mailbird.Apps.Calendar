@@ -51,19 +51,31 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
 
         public IEnumerable<Metadata.Calendar> GetCalendars()
         {
-            var calendarListEntry = _calendarService.CalendarList.List().Execute().Items;
-            var list = calendarListEntry.Select(c => new Metadata.Calendar
+            try
             {
-                CalendarId = c.Id,
-                Name = c.Summary,
-                Description = c.Description,
-                AccessRights = c.AccessRole == "reader" ? Metadata.Calendar.Access.Read : Metadata.Calendar.Access.Write,
-                CalendarColor = (Color)ColorConverter.ConvertFromString(c.BackgroundColor),
-                Provider = "GoogleCalendarsStorage"
-            });
-            return list;
+                var calendarListEntry = _calendarService.CalendarList.List().Execute().Items;
+                var list = calendarListEntry.Select(c => new Metadata.Calendar
+                {
+                    CalendarId = c.Id,
+                    Name = c.Summary,
+                    Description = c.Description,
+                    AccessRights = c.AccessRole == "reader" ? Metadata.Calendar.Access.Read : Metadata.Calendar.Access.Write,
+                    CalendarColor = (Color)ColorConverter.ConvertFromString(c.BackgroundColor),
+                    Provider = "GoogleCalendarsStorage"
+                });
+                return list;
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                return null;
+
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                return null;
+            }
         }
-        
+
         public IEnumerable<Appointment> GetAppointments()
         {
             var appointments = new List<Appointment>();
@@ -96,39 +108,76 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
             return list;
         }
 
+        //adding try catch in below to prevent force close when there is internet connection interruption
         public bool InsertAppointment(Appointment appointment)
         {
-            var googleEvent = new Event
+            try
             {
-                Start = new EventDateTime
+                var googleEvent = new Event
                 {
-                    DateTime = appointment.StartTime
-                },
-                End = new EventDateTime { DateTime = appointment.EndTime },
-                Summary = appointment.Subject,
-                Description = appointment.Description,
-                Location = appointment.Location
-            };
-            _calendarService.Events.Insert(googleEvent, appointment.Calendar.CalendarId).Execute();
-            return true;
+                    Start = new EventDateTime
+                    {
+                        DateTime = appointment.StartTime
+                    },
+                    End = new EventDateTime { DateTime = appointment.EndTime },
+                    Summary = appointment.Subject,
+                    Description = appointment.Description,
+                    Location = appointment.Location
+                };
+                _calendarService.Events.Insert(googleEvent, appointment.Calendar.CalendarId).Execute();
+                return true;
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                return false;
+
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                return false;
+            }
         }
 
         public bool UpdateAppointment(Appointment appointment)
         {
-            var googleEvent = _calendarService.Events.Get(appointment.Calendar.CalendarId, appointment.Id.ToString()).Execute();
-            googleEvent.Start.DateTime = appointment.StartTime;
-            googleEvent.End.DateTime = appointment.EndTime;
-            googleEvent.Summary = appointment.Subject;
-            googleEvent.Description = appointment.Description;
-            googleEvent.Location = appointment.Location;
-            _calendarService.Events.Update(googleEvent, appointment.Calendar.CalendarId, googleEvent.Id);
-            return true;
+            try
+            {
+                var googleEvent = _calendarService.Events.Get(appointment.Calendar.CalendarId, appointment.Id.ToString()).Execute();
+                googleEvent.Start.DateTime = appointment.StartTime;
+                googleEvent.End.DateTime = appointment.EndTime;
+                googleEvent.Summary = appointment.Subject;
+                googleEvent.Description = appointment.Description;
+                googleEvent.Location = appointment.Location;
+                _calendarService.Events.Update(googleEvent, appointment.Calendar.CalendarId, googleEvent.Id);
+                return true;
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                return false;
+
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                return false;
+            }
         }
 
         public bool RemoveAppointment(Appointment appointment)
         {
-            _calendarService.Events.Delete(appointment.Calendar.CalendarId, appointment.Id.ToString());
-            return true;
+            try
+            {
+                _calendarService.Events.Delete(appointment.Calendar.CalendarId, appointment.Id.ToString());
+                return true;
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                return false;
+
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                return false;
+            }
         }
     }
 }
