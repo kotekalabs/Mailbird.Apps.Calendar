@@ -10,6 +10,8 @@ using System.Collections.Generic;
 ﻿using Mailbird.Apps.Calendar.Engine.Metadata;
 ﻿using Mailbird.Apps.Calendar.Infrastructure;
 using System.Threading.Tasks;
+using System.Windows.Threading;
+using System.Threading;
 
 namespace Mailbird.Apps.Calendar.ViewModels
 {
@@ -23,57 +25,104 @@ namespace Mailbird.Apps.Calendar.ViewModels
 
         private readonly ObservableCollection<TreeData> _treeData = new ObservableCollection<TreeData>();
 
-        private readonly Engine.Metadata.Calendar[] _calendarCollection;
+        private readonly ObservableCollection<Engine.Metadata.Calendar> _calendarCollection = new ObservableCollection<Engine.Metadata.Calendar>();
 
+        private ObservableCollection<Appointment> _appointmentCollection = new ObservableCollection<Appointment>();
         #endregion PrivateProps
 
         #region PublicProps
 
         public FlyoutViewModel FlyoutViewModel { get; private set; }
 
-        public ObservableCollection<Appointment> AppointmentCollection { get; private set; }
+        public ObservableCollection<Appointment> AppointmentCollection
+        {
+            get
+            {
+                return _appointmentCollection;
+            }
+
+            set
+            {
+                _appointmentCollection = value;
+                RaisePropertyChanged(() => AppointmentCollection);
+            }
+        }
 
         public ObservableCollection<TreeData> TreeData
         {
             get { return _treeData; }
         }
 
+        private DispatcherTimer _timer;
+
+        private CancellationTokenSource _cts;
+
         #endregion PublicProps
 
         public MainWindowViewModel()
         {
-            AppointmentCollection = new ObservableCollection<Appointment>(_calendarsCatalog.GetCalendarAppointments());
-            foreach (var provider in _calendarsCatalog.GetProviders)
-            {
-                AddElementToTree(provider);
-                foreach (var calendar in provider.GetCalendars())
-                {
-                    AddElementToTree(calendar);
-                }
-            }
-            var appointmentList = _calendarsCatalog.GetCalendarAppointments().ToList();
-            AppointmentCollection = new ObservableCollection<Appointment>(appointmentList);
-
-            foreach (var a in appointmentList)
-            {
-                // Make sure we don't get any duplicates
-                if (!_appointments.ContainsKey(a.Id))
-                    _appointments.Add(a.Id, a);
-            }
-            //make asynchronous for minimalize UI lag.
-            var calendars = Task.Factory.StartNew(() => _calendarsCatalog.GetCalendars());
-
-            //if (calendars.IsCompleted)
-                _calendarCollection = calendars.Result.ToArray();
-
+            
             FlyoutViewModel = new FlyoutViewModel
             {
                 AddAppointmentAction = AddAppointment,
                 UpdateAppointmentAction = UpdateAppointment,
                 RemoveAppointmentAction = RemoveAppointment
             };
+            //Make asynchronous
+            var calendars = Task.Factory.StartNew(() => _calendarsCatalog.GetCalendars());
+            calendars.Result.ToArray();
+
+            _cts = new CancellationTokenSource();
+            SyncTaskAsync();
+            _timer = new DispatcherTimer();
+            _timer.Interval = TimeSpan.FromMinutes(1);
+            _timer.Tick += _timer_Tick;
+            _timer.Start();
         }
 
+        void _timer_Tick(object sender, EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("Fired Timer");
+            SyncTaskAsync();
+        }
+
+        private void SyncTaskAsync()
+        {
+            //using CTS for making the thread can be cancelled
+            //using FromCurrentSynchronizationContext for make the thread can be update the UI without Dispatcher.
+           var task = Task.Factory.StartNew(()=>
+            {
+                foreach (var provider in _calendarsCatalog.GetProviders)
+                {
+                    AddElementToTree(provider);
+                    foreach (var calendar in provider.GetCalendars())
+                    {
+                        AddElementToTree(calendar);
+                        _calendarCollection.Add(calendar);
+                    }
+                }
+                
+                var appointmentList = _calendarsCatalog.GetCalendarAppointments().ToList();
+                
+
+                foreach (var a in appointmentList)
+                {
+                    // Make sure we don't get any duplicates
+                    if (!_appointments.ContainsKey(a.Id))
+                        _appointments.Add(a.Id, a);
+                }
+
+                return appointmentList;
+            });
+           task.ContinueWith(x =>
+           {
+               if (x.IsFaulted || x.IsCanceled)
+                   return;
+               AppointmentCollection = new ObservableCollection<Appointment>(x.Result);
+             
+           },_cts.Token, TaskContinuationOptions.LongRunning,TaskScheduler.FromCurrentSynchronizationContext());
+
+        }
         public void AddAppointment(Appointment appointment)
         {
             AppointmentCollection.Add(appointment);
@@ -98,7 +147,7 @@ namespace Mailbird.Apps.Calendar.ViewModels
 
         public void RemoveAppointment(object appintmentId)
         {
-            //prevent Calendar to be null  -> Will Force Close when Drag & Move Events
+            //double check prevent Calendar to be null  -> Will Force Close when Drag & Move Events
             var appointment = _appointments[appintmentId]; // make like this for more debuggable code
             if (appointment.Calendar == null)
                 appointment.Calendar = _calendarsCatalog.DefaultCalendar != null ? _calendarsCatalog.DefaultCalendar : _calendarCollection.FirstOrDefault(x => x.AccessRights == Engine.Metadata.Calendar.Access.Write);
