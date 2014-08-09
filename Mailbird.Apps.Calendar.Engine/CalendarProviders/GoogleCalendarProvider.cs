@@ -54,6 +54,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
             try
             {
                 var calendarListEntry = _calendarService.CalendarList.List().Execute().Items;
+                
                 var list = calendarListEntry.Select(c => new Metadata.Calendar
                 {
                     CalendarId = c.Id,
@@ -94,7 +95,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
         public IEnumerable<Appointment> GetAppointments(string calendarId)
         {
             var calendarEvents = _calendarService.Events.List(calendarId).Execute().Items;
-
+            var calendar = Calendars.FirstOrDefault(x=>x.CalendarId.Equals(calendarId));
             var list = calendarEvents.Select(a => new Appointment
             {
                 Id = a.Id,
@@ -102,6 +103,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
                 EndTime = (a.End != null && a.End.DateTime.HasValue) ? a.End.DateTime.Value : DateTime.Now,
                 Subject = a.Summary,
                 Description = a.Description,
+                Calendar = calendar,
                 Location = a.Location
             });
 
@@ -148,7 +150,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
                 googleEvent.Summary = appointment.Subject;
                 googleEvent.Description = appointment.Description;
                 googleEvent.Location = appointment.Location;
-                _calendarService.Events.Update(googleEvent, appointment.Calendar.CalendarId, googleEvent.Id);
+                _calendarService.Events.Update(googleEvent, appointment.Calendar.CalendarId, googleEvent.Id).Execute();
                 return true;
             }
             catch (System.Net.Http.HttpRequestException ex)
