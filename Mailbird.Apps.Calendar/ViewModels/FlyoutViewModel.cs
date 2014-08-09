@@ -332,7 +332,7 @@ namespace Mailbird.Apps.Calendar.ViewModels
             _endTime = DefaultTimeValue;
             RaisePropertyChanged(() => EndTime);
             
-            if (Math.Abs((EndDate - StartDate).TotalDays) < 1)
+            if (Math.Abs((EndDate - StartDate).TotalDays) < 0)
             {
                 _endDate = EndDate.AddDays(1);
                 RaisePropertyChanged(() => EndDate);

@@ -61,7 +61,20 @@ namespace Mailbird.Apps.Calendar.ViewModels
 
         public MainWindowViewModel()
         {
-            
+
+            foreach (var provider in _calendarsCatalog.GetProviders)
+            {
+                AddElementToTree(provider);
+                foreach (var calendar in provider.GetCalendars())
+                {
+                    AddElementToTree(calendar);
+                    _calendarCollection.Add(calendar);
+                }
+            }
+
+            _cts = new CancellationTokenSource();
+            SyncTaskAsync();
+
             FlyoutViewModel = new FlyoutViewModel
             {
                 AddAppointmentAction = AddAppointment,
@@ -72,8 +85,7 @@ namespace Mailbird.Apps.Calendar.ViewModels
             var calendars = Task.Factory.StartNew(() => _calendarsCatalog.GetCalendars());
             calendars.Result.ToArray();
 
-            _cts = new CancellationTokenSource();
-            SyncTaskAsync();
+            
             _timer = new DispatcherTimer();
             _timer.Interval = TimeSpan.FromMinutes(1);
             _timer.Tick += _timer_Tick;
@@ -92,15 +104,6 @@ namespace Mailbird.Apps.Calendar.ViewModels
             //using FromCurrentSynchronizationContext for make the thread can be update the UI without Dispatcher.
            var task = Task.Factory.StartNew(()=>
             {
-                foreach (var provider in _calendarsCatalog.GetProviders)
-                {
-                    AddElementToTree(provider);
-                    foreach (var calendar in provider.GetCalendars())
-                    {
-                        AddElementToTree(calendar);
-                        _calendarCollection.Add(calendar);
-                    }
-                }
                 
                 var appointmentList = _calendarsCatalog.GetCalendarAppointments().ToList();
                 
@@ -166,26 +169,29 @@ namespace Mailbird.Apps.Calendar.ViewModels
 
         private void AddElementToTree(object element)
         {
-            if (element is ICalendarProvider)
+            Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
             {
-                TreeData.Add(new TreeData
+                if (element is ICalendarProvider)
                 {
-                    DataType = TreeDataType.Provider,
-                    Data = element,
-                    Name = (element as ICalendarProvider).Name,
-                    ParentID = "0"
-                });
-            }
-            if (element is Mailbird.Apps.Calendar.Engine.Metadata.Calendar)
-            {
-                TreeData.Add(new TreeData
+                    TreeData.Add(new TreeData
+                    {
+                        DataType = TreeDataType.Provider,
+                        Data = element,
+                        Name = (element as ICalendarProvider).Name,
+                        ParentID = "0"
+                    });
+                }
+                if (element is Mailbird.Apps.Calendar.Engine.Metadata.Calendar)
                 {
-                    DataType = TreeDataType.Calendar,
-                    Data = element,
-                    Name = (element as Mailbird.Apps.Calendar.Engine.Metadata.Calendar).Name,
-                    ParentID = (element as Mailbird.Apps.Calendar.Engine.Metadata.Calendar).Provider
-                });
-            }
+                    TreeData.Add(new TreeData
+                    {
+                        DataType = TreeDataType.Calendar,
+                        Data = element,
+                        Name = (element as Mailbird.Apps.Calendar.Engine.Metadata.Calendar).Name,
+                        ParentID = (element as Mailbird.Apps.Calendar.Engine.Metadata.Calendar).Provider
+                    });
+                }
+            }));
         }
 
         public void OpenInnerFlyout(SchedulerControl scheduler)

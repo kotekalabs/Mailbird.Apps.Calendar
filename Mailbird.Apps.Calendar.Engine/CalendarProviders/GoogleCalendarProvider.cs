@@ -16,10 +16,11 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
     public class GoogleCalendarProvider : ICalendarProvider
     {
         private CalendarService _calendarService;
-
+        private TimeZone _currentTimeZone;
         public GoogleCalendarProvider()
         {
             Name = "GoogleCalendarsStorage";
+            _currentTimeZone = TimeZone.CurrentTimeZone;
             Authorize();
         }
 
@@ -54,7 +55,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
             try
             {
                 var calendarListEntry = _calendarService.CalendarList.List().Execute().Items;
-                
+
                 var list = calendarListEntry.Select(c => new Metadata.Calendar
                 {
                     CalendarId = c.Id,
@@ -95,15 +96,19 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
         public IEnumerable<Appointment> GetAppointments(string calendarId)
         {
             var calendarEvents = _calendarService.Events.List(calendarId).Execute().Items;
-            var calendar = Calendars.FirstOrDefault(x=>x.CalendarId.Equals(calendarId));
+            var calendar = Calendars.FirstOrDefault(x => x.CalendarId.Equals(calendarId));
             var list = calendarEvents.Select(a => new Appointment
             {
                 Id = a.Id,
-                StartTime = (a.Start != null && a.Start.DateTime.HasValue) ? a.Start.DateTime.Value : DateTime.Now,
-                EndTime = (a.End != null && a.End.DateTime.HasValue) ? a.End.DateTime.Value : DateTime.Now,
+                //change because sometimes get all event from the imported calendar just have date
+                StartTime = (a.Start != null && a.Start.DateTime.HasValue) ? a.Start.DateTime.Value : (a.Start.Date != null) ? Convert.ToDateTime(a.Start.Date) : DateTime.Now,
+                EndTime = (a.End != null && a.End.DateTime.HasValue) ? a.End.DateTime.Value : (a.End.Date != null) ? Convert.ToDateTime(a.End.Date) : DateTime.Now,
                 Subject = a.Summary,
                 Description = a.Description,
                 Calendar = calendar,
+                //fixing binding error
+                LabelId = a.ColorId != null ? int.Parse(a.ColorId) : 0,
+                AllDayEvent = (a.Start.DateTime.HasValue && a.End.DateTime.HasValue && (Math.Abs(a.End.DateTime.Value.Subtract(a.Start.DateTime.Value).TotalDays) == 0)) ? true : false,
                 Location = a.Location
             });
 
@@ -115,17 +120,37 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
         {
             try
             {
-                var googleEvent = new Event
+                Event googleEvent = new Event();
+                //changed to be like this because all-day-event in google calendar just have date. if not even we had check the all day event
+                // it will be still time limit event.
+                if (appointment.AllDayEvent)
                 {
-                    Start = new EventDateTime
+                    googleEvent.Start = new EventDateTime
+                      {
+                          Date = new DateTimeOffset(appointment.StartTime, _currentTimeZone.GetUtcOffset(appointment.StartTime)).DateTime.ToString("yyyy-MM-dd")
+                      };
+                    googleEvent.End = new EventDateTime
                     {
-                        DateTime = appointment.StartTime
-                    },
-                    End = new EventDateTime { DateTime = appointment.EndTime },
-                    Summary = appointment.Subject,
-                    Description = appointment.Description,
-                    Location = appointment.Location
-                };
+                        Date = new DateTimeOffset(appointment.EndTime, _currentTimeZone.GetUtcOffset(appointment.EndTime)).DateTime.ToString("yyyy-MM-dd")
+                    };
+
+                }
+                else
+                {
+                    googleEvent.Start = new EventDateTime
+                      {
+                          DateTime = new DateTimeOffset(appointment.StartTime, _currentTimeZone.GetUtcOffset(appointment.StartTime)).DateTime
+                      };
+                    googleEvent.End = new EventDateTime
+                    {
+                        DateTime = new DateTimeOffset(appointment.EndTime, _currentTimeZone.GetUtcOffset(appointment.EndTime)).DateTime
+                    };
+
+                }
+                googleEvent.Summary = appointment.Subject;
+                googleEvent.Description = appointment.Description;
+                googleEvent.ColorId = !String.IsNullOrEmpty(appointment.LabelId.ToString()) ? appointment.LabelId.ToString() : "0";
+                googleEvent.Location = appointment.Location;
                 _calendarService.Events.Insert(googleEvent, appointment.Calendar.CalendarId).Execute();
                 return true;
             }
@@ -145,8 +170,15 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
             try
             {
                 var googleEvent = _calendarService.Events.Get(appointment.Calendar.CalendarId, appointment.Id.ToString()).Execute();
-                googleEvent.Start.DateTime = appointment.StartTime;
-                googleEvent.End.DateTime = appointment.EndTime;
+                if (appointment.AllDayEvent)
+                {
+                    googleEvent.Start.Date = appointment.StartTime.ToString("yyyy-MM-dd");
+                    googleEvent.End.Date = appointment.EndTime.ToString("yyyy-MM-dd");
+                }
+
+                googleEvent.Start.DateTime = new DateTimeOffset(appointment.StartTime, _currentTimeZone.GetUtcOffset(appointment.StartTime)).DateTime;
+                googleEvent.End.DateTime = new DateTimeOffset(appointment.EndTime, _currentTimeZone.GetUtcOffset(appointment.EndTime)).DateTime;
+                googleEvent.ColorId = !String.IsNullOrEmpty(appointment.LabelId.ToString()) ? appointment.LabelId.ToString() : "0";
                 googleEvent.Summary = appointment.Subject;
                 googleEvent.Description = appointment.Description;
                 googleEvent.Location = appointment.Location;
@@ -168,7 +200,7 @@ namespace Mailbird.Apps.Calendar.Engine.CalendarProviders
         {
             try
             {
-                _calendarService.Events.Delete(appointment.Calendar.CalendarId, appointment.Id.ToString());
+                _calendarService.Events.Delete(appointment.Calendar.CalendarId, appointment.Id.ToString()).Execute();
                 return true;
             }
             catch (System.Net.Http.HttpRequestException ex)
